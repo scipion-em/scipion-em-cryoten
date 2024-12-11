@@ -1,6 +1,6 @@
 # **************************************************************************
 # *
-# * Authors:     David Herreros (dherreros@cnb.csic.es)
+# * Authors:     Javier Sanchez (scipion@cnb.csic.es)
 # *
 # * National Centre for Biotechnology (CSIC)
 # *
