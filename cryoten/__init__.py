@@ -1,12 +1,12 @@
 # **************************************************************************
 # *
-# * Authors:     Pablo Conesa
+# * Authors:     David Herreros (dherreros@cnb.csic.es)
 # *
-# * CNB CSIC
+# * National Centre for Biotechnology (CSIC)
 # *
 # * This program is free software; you can redistribute it and/or modify
 # * it under the terms of the GNU General Public License as published by
-# * the Free Software Foundation; either version 3 of the License, or
+# * the Free Software Foundation; either version 2 of the License, or
 # * (at your option) any later version.
 # *
 # * This program is distributed in the hope that it will be useful,
@@ -23,92 +23,100 @@
 # *  e-mail address 'scipion@cnb.csic.es'
 # *
 # **************************************************************************
-from datetime import datetime as dt
+
 import os
-
-import pwem
 import pyworkflow.utils as pwutils
-from scipion.install.funcs import VOID_TGZ
+import pwem
+import subprocess
 
-from .constants import *
+from cryoten.constants import *
 
-__version__ = "3.1.1"
-_logo = "logo.jpeg"
-_references = ['jamali2023']
+__version__ = "1.0.4"  # plugin version
+_logo = "icon.png"
+_references = ['cryoten2024']
+
+# For the installation
+driver_cuda_compatibility = {
+    "465": "11.3.0",
+    "470": "11.4.0",
+    "495": "11.5.0",
+    "510": "11.6.0",
+    "515": "11.7.0",
+    "520": "11.8.0",
+    "525": "12.0.0",
+    "530": "12.1.0",
+    "535": "12.2.0",
+    "540": "12.3.0",
+    "545": "12.4.0",
+    "550": "12.5.0",
+    "555": "12.6.0",  # Expected or approximated for newer releases
+}
 
 
 class Plugin(pwem.Plugin):
+    _url = "https://github.com/scipion-em/scipion-em-cryoten"
+    _supportedVersions = [V1]  # binary version
 
     @classmethod
-    def _defineVariables(cls):
-        cls._defineVar(MODEL_ANGELO_ACTIVATION_VAR, '')
-        cls._defineVar(MODEL_ANGELO_ENV_ACTIVATION_VAR, cls.getActivationCmd(MA_VERSION))
-        cls._defineEmVar(TORCH_HOME_VAR, MODELS_PKG_NAME + "-" + MODELS_VERSION)
-        cls._defineVar(MODEL_ANGELO_CUDA_LIB, pwem.Config.CUDA_LIB)
+    def getEnvActivation(cls):
+        return f"conda activate cryoten-{V1}"
 
     @classmethod
-    def getModelAngeloCmd(cls):
-        cmd = cls.getVar(MODEL_ANGELO_ACTIVATION_VAR)
-        if not cmd:
-            cmd = cls.getCondaActivationCmd()
-            cmd += cls.getVar(MODEL_ANGELO_ENV_ACTIVATION_VAR)
-        cmd += " && model_angelo"
-        return cmd
-
-    @classmethod
-    def getEnviron(cls):
+    def getEnviron(cls, gpuID=None):
+        """ Setup the environment variables needed to launch my program. """
         environ = pwutils.Environ(os.environ)
-        torch_home = cls.getVar(TORCH_HOME_VAR)
-        environ.set(TORCH_HOME_VAR, torch_home)
 
-        cudaLib = cls.getVar(MODEL_ANGELO_CUDA_LIB)
-        environ.addLibrary(cudaLib)
+        if gpuID is not None:
+            environ["CUDA_VISIBLE_DEVICES"] = gpuID
 
         return environ
 
     @classmethod
-    def getActivationCmd(cls, version):
-        return 'conda activate modelangelo-' + version
+    def getcryotenProgram(cls, program):
+        cmd = '%s %s && cryoten %s' % (cls.getCondaActivationCmd(), cls.getEnvActivation(), program)
+        return cmd
+
+    @classmethod
+    def getCommand(cls, program, args):
+        return cls.getcryotenProgram(program) + args
 
     @classmethod
     def defineBinaries(cls, env):
 
-        def defineModelAngeloInstallation(version):
-            installed = "last-pull-%s.txt" % dt.now().strftime("%y%h%d-%H%M%S")
+        def getcryotenInstallationCommands():
+            nvidiaNVCC = False
+            try:
+                nvidiaDriverVer = subprocess.Popen(["nvidia-smi",
+                                                    "--query-gpu=driver_version",
+                                                    "--format=csv,noheader"],
+                                                   env=cls.getEnviron(),
+                                                   stdout=subprocess.PIPE
+                                                   ).stdout.read().decode('utf-8').split(".")[0]
+                nvidiaNVCC = subprocess.run(['nvcc', '--version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            except (ValueError, TypeError, FileNotFoundError):
+                print("NVCC not found in your system, installing it in the environment...")
 
-            modelangelo_commands = [
-                ('git clone https://github.com/3dem/model-angelo.git', 'model-angelo'),
-                (getCondaInstallation(version), 'env-created.txt'),
-                ('cd model-angelo && git pull && touch ../%s' % installed, installed)
-            ]
+            commands = cls.getCondaActivationCmd() + " "
+            if nvidiaNVCC:
+                commands += f"conda create -n cryoten-{V1} -c conda-forge fftw python=3.10 -y && "
+            else:
+                compatible_versions = [cuda for drv, cuda in driver_cuda_compatibility.items() if
+                                       drv <= nvidiaDriverVer]
+                cudaVersion = max(compatible_versions)
+                commands += (
+                    f"conda create -n cryoten-{V1} -c conda-forge -c nvidia/label/cuda-{cudaVersion} python=3.10 "
+                    f"fftw cuda={cudaVersion} -y && ")
+            commands += f"conda activate cryoten-{V1} && "
+            commands += "pip install cryoten && pip install openmm && "
+            commands += ("git clone https://gitlab.com/ccpem/ccpem-pipeliner.git && "
+                         "cd ccpem-pipeliner && git checkout bedbedbe183ad497dbaa82a638f210d316ba9bae && "
+                         "pip install -e . && cd .. && ")
+            commands += "touch cryoten_installed"
+            return commands
 
-            env.addPackage('modelangelo', version=version,
-                           commands=modelangelo_commands,
-                           tar=VOID_TGZ,
-                           default=True)
 
-        def getCondaInstallation(version):
-            installationCmd = cls.getCondaActivationCmd()
-            installationCmd += 'conda create -y -n modelangelo-' + version + ' python=3.10 && '
-            installationCmd += cls.getActivationCmd(version) + ' && '
-            installationCmd += 'conda install -y pytorch torchvision torchaudio pytorch-cuda=11.8 -c pytorch -c nvidia && '
-            installationCmd += 'cd model-angelo && '
-            installationCmd += 'pip install -e . && '
-            installationCmd += 'touch ../env-created.txt'
-
-            return installationCmd
-
-        defineModelAngeloInstallation(MA_VERSION)
-
-        # Models download
-        installationCmd = ""
-        installationCmd += 'export TORCH_HOME=$PWD && '
-        installationCmd += cls.getCondaActivationCmd() + " " + cls.getActivationCmd(MA_VERSION) + ' && '
-        installationCmd += 'python -m model_angelo.utils.setup_weights --bundle-name original && '
-        installationCmd += 'python -m model_angelo.utils.setup_weights --bundle-name original_no_seq'
-
-        env.addPackage('modelangelomodels', version=MODELS_VERSION,
-                       commands=[(installationCmd, [f"hub/checkpoints/model_angelo_v{MODELS_VERSION}/original_no_seq/success.txt",
-                                                    f"hub/checkpoints/model_angelo_v{MODELS_VERSION}/original/success.txt"])],
-                       tar=VOID_TGZ,
+        installCmds = [(getcryotenInstallationCommands(), "cryoten_installed")]
+        env.addPackage('cryoten', version=V1,
+                       tar='void.tgz',
+                       commands=installCmds,
                        default=True)

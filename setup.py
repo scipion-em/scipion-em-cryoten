@@ -10,6 +10,7 @@ from setuptools import setup, find_packages
 # To use a consistent encoding
 from codecs import open
 from os import path
+
 from cryoten import __version__
 
 here = path.abspath(path.dirname(__file__))
@@ -27,25 +28,20 @@ with open('requirements.txt') as f:
 setup(
     name='scipion-em-cryoten',  # Required
     version=__version__,  # Required
-    description='Scipion plugin for cryoten.',  # Required
+    description='Cryoten plugin for Scipion',  # Required
     long_description=long_description,  # Optional
     url='https://github.com/scipion-em/scipion-em-cryoten',  # Optional
-    author='Javier Sanchez',  # Optional
-    author_email='scipion@cnb.cnb.csic.es',  # Optional
-    keywords='scipion cryoem imageprocessing modelling cryoten scipion-3.0',  # Optional
+    author='David Herreros',  # Optional
+    author_email='dherreros@cnb.csic.es',  # Optional
+    keywords='scipion cryoem imageprocessing scipion-3.0 datasimulation',  # Optional
     packages=find_packages(),
     install_requires=[requirements],
-    entry_points={'pyworkflow.plugin': 'cryoten = cryoten'},
-    package_data={  # Optional
-       'cryoten': ['logo.jpeg', 'protocols.conf'],
-    },
-    classifiers=[  # Optional
-        'Development Status :: 4 - Beta',
-        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
-        'Programming Language :: Python :: 3'
-    ],
     project_urls={  # Optional
         'Bug Reports': 'https://github.com/scipion-em/scipion-em-cryoten/issues',
         'Source': 'https://github.com/scipion-em/scipion-em-cryoten/',
     },
+    entry_points={'pyworkflow.plugin': 'cryoten = cryoten'},
+    package_data={  # Optional
+       'cryoten': ['ccpem_logo.png', 'protocols.conf'],
+    }
 )
