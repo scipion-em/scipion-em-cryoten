@@ -1,55 +1,24 @@
-# -*- coding: utf-8 -*-
-# **************************************************************************
-# *
-# * Authors:     Javier Sanchez (scipion@cnb.csic.es)
-# *
-# *
-# * This program is free software; you can redistribute it and/or modify
-# * it under the terms of the GNU General Public License as published by
-# * the Free Software Foundation; either version 3 of the License, or
-# * (at your option) any later version.
-# *
-# * This program is distributed in the hope that it will be useful,
-# * but WITHOUT ANY WARRANTY; without even the implied warranty of
-# * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# * GNU General Public License for more details.
-# *
-# * You should have received a copy of the GNU General Public License
-# * along with this program; if not, write to the Free Software
-# * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-# * 02111-1307  USA
-# *
-# *  All comments concerning this program package may be sent to the
-# *  e-mail address 'scipion@cnb.csic.es'
-# *
-# **************************************************************************
-
-import os.path
-
-from pwem.objects import Volume, AtomStruct, VolumeMask
-from pyworkflow.protocol import params, LEVEL_ADVANCED
+import os
+import subprocess
+from pyworkflow.constants import BETA
+import pyworkflow.protocol.params as params
 from pyworkflow.utils import Message
 from pwem.protocols import EMProtocol
-from pyworkflow.protocol import GPU_LIST, USE_GPU
-from pwem.convert.headers import Ccp4Header
-
-from modelangelo import Plugin
-
-OUTPUT_NAME = "pruned"
-OUTPUT_RAW_NAME = "raw"
+from pyworkflow.protocol import String
+from pwem.objects import Volume  # Import the Volume class to define the output
 
 
-class ProtCryoTEN(EMProtocol):
+class CryotenPrefixEnhace(EMProtocol):
     """
-    ModelAngelo is an automatic atomic model building program for cryo-EM maps.
-    With or without providing a sequence.
+    This protocol will enhance the map using Cryoten software.
+    IMPORTANT: Classes names should be unique, better prefix them
     """
-    _label = 'model builder'
+    _label = 'enhance map'
+    _devStatus = BETA
 
-    _possibleOutputs = {
-        OUTPUT_NAME: AtomStruct,
-        OUTPUT_RAW_NAME: AtomStruct
-    }
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.outputFilePath = None  # Initialize the outputFilePath attribute
 
     # -------------------------- DEFINE param functions ----------------------
     def _defineParams(self, form):
@@ -58,175 +27,130 @@ class ProtCryoTEN(EMProtocol):
             form: this is the form to be populated with sections and params.
         """
         form.addSection(label=Message.LABEL_INPUT)
+
         form.addParam('inputVolume', params.PointerParam,
-                      pointerClass=Volume,
-                      label='Refined volume', important=True,
-                      help='Refined cryo-em map.')
-
-        form.addParam('inputSequenceS', params.MultiPointerParam,
-                      pointerClass="Sequence", allowsNull=True, important=True,
-                      label='Protein sequences',
-                      help="Include here one or more sequences to be modeled\n"
-                           "Leave empty to use the *model_no_seq* option.")
-
-        form.addParam('inputMask', params.PointerParam,
-                      pointerClass=VolumeMask,
-                      label='Volume mask', allowsNull=True, important=True,
-                      help='Search will be done inside the mask.\n'
-                           'That is, voxels inside the mask should be NON zero.')
-
-        form.addHidden(USE_GPU, params.BooleanParam, default=True,
-                       label="Use GPU for execution",
-                       help="This protocol has both CPU and GPU implementation. "
-                            "Select the one you want to use.")
-
-        form.addHidden(GPU_LIST, params.StringParam, default='0',
-                       expertLevel=LEVEL_ADVANCED,
-                       label="Choose GPU ID (single one)",
-                       help="GPU device to be used")
-
-        form.addParam('configFile', params.FileParam,
-                      label="Configuration File",
-                      default="",
-                      expertLevel=LEVEL_ADVANCED,
-                      help="""This option is only for VERY advanced users.\n
-Below is an example of a config file:
-
-{
-  "standardize_mrc_args":
-    {
-      "target_voxel_size": 1.5,
-      "crop_z": 0,
-      "bfactor_to_apply": 0,
-      "auto_mask": false
-    },
-  "ca_infer_args":
-    {
-      "model_checkpoint": "chkpt.torch",
-      "bfactor": 0,
-      "batch_size": 4,
-      "stride": 16,
-      "dont_mask_input": true,
-      "threshold": 0.05,
-      "save_real_coordinates": false,
-      "save_cryo_em_grid": false,
-      "do_nucleotides": false,
-      "save_backbone_trace": false,
-      "save_ca_grid": false,
-      "crop": 6
-    },
-  "gnn_infer_args":
-    {
-      "num_rounds": 3,
-      "crop_length": 200,
-      "repeat_per_residue": 3,
-      "esm_model": "esm1b_t33_650M_UR50S",
-      "aggressive_pruning": false,
-      "seq_attention_batch_size": 200
-    }
-}
-""")
-
-    # -------------------------- INSERT steps functions -----------------------
-    def _insertAllSteps(self):
-        # Insert processing steps
-        self._insertFunctionStep(self.convertInputStep)
-        self._insertFunctionStep(self.predictStep)
-        self._insertFunctionStep(self.createOutputStep)
+                      label='Input Volume',
+                      pointerClass='Volume',
+                      help='Select the volume to be processed.')
 
     # --------------------------- STEPS functions ------------------------------
-    def convertInputStep(self):
-        """ convert 3D maps to MRC '.mrc' format
-            with extension mrc, map extension is not handled by modelangelo
-        """
-        vol = self.inputVolume.get()
-        inVolName = vol.getFileName()
-        if inVolName.endswith(".mrc"):
-            self.newFn = inVolName
-        else:
-            self.newFn = self._getExtraPath("inputVol.mrc")
-            origin = vol.getOrigin(force=True).getShifts()
-            sampling = vol.getSamplingRate()
-            Ccp4Header.fixFile(inVolName, self.newFn, origin, sampling, Ccp4Header.START)  # ORIGIN
+    def _insertAllSteps(self):
+        self._insertFunctionStep(self.runShellCommandsStep)
+        self._insertFunctionStep(self.createOutputStep)
 
-    def predictStep(self):
-        seqs = self.inputSequenceS
-        mask = self.inputMask.get()
-        configFile = self.configFile.get()
+    def get_conda_path(self):
+        """Determine the path to the conda.sh script dynamically."""
+        try:
+            result = subprocess.run(['conda', 'info', '--base'], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+            base_path = result.stdout.decode('utf-8').strip()
+            if result.returncode == 0 and base_path:
+                return os.path.join(base_path, 'etc', 'profile.d', 'conda.sh')
+            else:
+                raise Exception(f"Failed to determine conda base path: {result.stderr.decode('utf-8')}")
+        except Exception as e:
+            raise Exception(f"An error occurred while determining conda path: {e}")
 
-        args = []
-        if seqs:
-            fasta = self.createInputFastaFile(seqs)
-            args.extend(["build", "--fasta-path", fasta])
-        else:
-            args.append("build_no_seq")
-
-        args.extend(["--volume-path", self.newFn,
-                     "--output-dir", self._getExtraPath()])
-
-        if mask:
-            args.extend(["--mask-path", mask.getFileName()])
-
-        # Gpu or cpu
-        args.extend(["--device", ("%s" % self.getGpuList()[0]) if self.useGpu else "cpu"])
-
-        if configFile:
-            args.extend(["-c", configFile])
+    def runShellCommandsStep(self):
+        def run_command(command):
+            """Run a shell command and handle any errors."""
+            process = subprocess.run(command, shell=True, executable='/bin/bash', stdout=subprocess.PIPE,
+                                     stderr=subprocess.PIPE)
+            stdout = process.stdout.decode('utf-8')
+            stderr = process.stderr.decode('utf-8')
+            if process.returncode != 0:
+                raise Exception(f"Command '{command}' failed with error: {stderr}")
+            return stdout, stderr
 
         try:
-            # Call model angelo:
-            self.runJob(Plugin.getModelAngeloCmd(), args)
-        except Exception:
-            # Modelangelo does not show error in the stdout, nor stderr we
-            # should go and read the error information from a log file
-            with open(self._getExtraPath("model_angelo.log")) as log:
-                for line in log.read().splitlines():
-                    self.error(line)
-            self.info("ERROR: %s." % line)
-            raise ChildProcessError("Model angelo has failed: %s. See error log "
-                                    "for more details." % line) from None
+            # Get the file path of the input volume
+            inputFilePath = self.inputVolume.get().getFileName()
+
+            print(f"Input file path: {inputFilePath}")
+
+            # Get the base path of the Scipion project
+            projectPath = self.getProject().getPath()
+
+            # Construct the full path
+            fullInputFilePath = os.path.join(projectPath, inputFilePath)
+
+            # Print the full input file path for verification
+            print(f"Full input file path: {fullInputFilePath}")
+
+            # Determine the conda path dynamically
+            condaPath = self.get_conda_path()
+
+            # Get the Scipion base path from an environment variable
+            scipion_base_path = os.getenv('SCIPION_BASE_PATH', os.path.expanduser('~/scipion'))
+
+            # Construct the Cryoten path based on the Scipion base path
+            cryotenPath = os.path.join(scipion_base_path, 'software/em/cryoten-1.0.0/cryoten')
+
+            # Get the run directory name dynamically
+            runPath = self._getPath()
+            runDirName = os.path.basename(runPath)
+            extraPath = os.path.join(projectPath, 'Runs', runDirName, 'extra')
+            print(f"Extra path: {extraPath}")
+
+            # Construct the output file path dynamically based on the extraPath
+            inputFileName = os.path.basename(inputFilePath)
+            print(f"Input file name: {inputFileName}")
+            outputFileName = os.path.splitext(inputFileName)[0] + '.mrc'
+            outputFilePath = os.path.join(extraPath, outputFileName)
+
+            # Construct the command
+            command = f"""
+                source {condaPath} && \
+                conda activate cryoten_env && \
+                cd {cryotenPath} && \
+                python eval.py {fullInputFilePath} {outputFilePath}
+            """
+            print(f"Running command: {command}")
+
+            # Execute the command
+            stdout, stderr = run_command(command)
+
+            # Log the output and error messages
+            # print(f"Command output: {stdout}")
+            # print(f"Command error: {stderr}")
+
+            # Save the output file path for the next step
+            self.outputFilePath = String(outputFilePath)
+            self._store()
+            print(f"Output file path set to: {self.outputFilePath}")
+
+        except Exception as e:
+            print(f"An error occurred: {e}")
 
     def createOutputStep(self):
-        """Register atomic models, raw and pruned"""
-        # check if files exists before registering
-        # I think build_no_seq creates a single output file (no raw file)
-        if os.path.exists(self._getExtraPath('extra_raw.cif')):
-            self._registerAtomStruct(OUTPUT_RAW_NAME, self._getExtraPath('extra_raw.cif'))
-        self._registerAtomStruct(OUTPUT_NAME, self._getExtraPath('extra.cif'))
+        """Create output volume and register it in Scipion."""
+        print(f"Output file path set to: {self.outputFilePath}")
+        if not self.outputFilePath:
+            raise RuntimeError("Output file path is not set. Ensure runShellCommandsStep has been executed successfully.")
+
+        outputVolume = Volume()
+        outputVolume.setFileName(self.outputFilePath)
+
+        # Copy the voxel size from the input volume to the output volume
+        voxelSize = self.inputVolume.get().getSamplingRate()
+        outputVolume.setSamplingRate(voxelSize)
+
+        self._defineOutputs(outputVolume=outputVolume)
+        self._defineSourceRelation(self.inputVolume, outputVolume)
+
+        
 
     # --------------------------- INFO functions -----------------------------------
     def _validate(self):
         errors = []
-        gpus = self.getGpuList()
-
-        if len(gpus) > 1:
-            errors.append('Only one GPU can be used.')
-
         return errors
 
-    # -------------------------- UTILS functions ------------------------------
-    def createInputFastaFile(self, seqs):
-        """ Get sequence as string and create the corresponding fasta file. """
+    def _summary(self):
+        """ Summarize what the protocol has done"""
+        summary = []
+        summary.append(f"Output file path set to: {self.outputFilePath}")
+        return summary
 
-        fastaFileName = self._getExtraPath('sequence.fasta')
-
-        with open(fastaFileName, "w") as f:
-            for seq in seqs:
-                s = seq.get()
-                f.write(f"> {s.getId()}\n")
-                f.write(f"{s.getSequence()}\n")
-
-        return fastaFileName
-
-    def _registerAtomStruct(self, name, path):
-        if not os.path.exists(path):
-            raise FileNotFoundError("Output %s not found." % path)
-
-        output = AtomStruct(filename=path)
-        self._defineOutputs(**{name: output})
-        self._defineSourceRelation(self.inputVolume, output)
-
-        seqs = self.inputSequenceS
-        if seqs:
-            for seq in seqs:
-                self._defineSourceRelation(seq, output)
+    def _methods(self):
+        methods = []
+        methods.append("This protocol enhances a map using the Cryoten software.")
+        return methods
