@@ -1,8 +1,8 @@
 ====================
-Cryoten   plugin
+Cryoten  plugin
 ====================
 
-This plugin provide a wrapper for `Cryoten <https://github.com/jianlin-cheng/cryoten>`_ which allows *de novo* atomic modelling
+This plugin provide a wrapper for `Cryoten <https://github.com/jianlin-cheng/cryoten>`_ which efficiently enhances Cryo-EM Density Maps using transformers
 
 
 Installation
@@ -41,20 +41,20 @@ conda activation to generate the final cryoten command. For example:
 
 .. code-block::
 
-    CRYOTEN_ENV_ACTIVATION = conda activate cryoten
+    CRYOTEN_ENV_ACTIVATION = conda activate cryoten_env
 
 If this variable is not defined, a default value will be provided that will work if the
 latest version is installed.
 
-If cryoten is installed already outside Scipion, one could define `CRYOTEN_ACTIVATION`.
+If cryoten is installed already outside Scipion, one could define `MODEL_ANGELO_ACTIVATION`.
 This variable will provide an activation (or load) command that can be anything and the Scipion
 conda activate will not be prepended. For example (loading cryoten as a module):
 
 .. code-block::
 
-    CRYOTEN_ACTIVATION = module load cryoten/main
+    MODEL_ANGELO_ACTIVATION = module load cryoten/main
 
-If you need to use CUDA different from the one used during Scipion installation (defined by *CUDA_LIB*), you can add *CRYOTEN_CUDA_LIB* variable to the config file.
+If you need to use CUDA different from the one used during Scipion installation (defined by *CUDA_LIB*), you can add *MODEL_ANGELO_CUDA_LIB* variable to the config file.
 
 Protocols
 ---------
