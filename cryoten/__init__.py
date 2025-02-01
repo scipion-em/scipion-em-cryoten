@@ -1,27 +1,3 @@
-# **************************************************************************
-# *
-# * Authors:     Javier Sanchez (scipion@cnb.csic.es)
-# *
-# * This program is free software; you can redistribute it and/or modify
-# * it under the terms of the GNU General Public License as published by
-# * the Free Software Foundation; either version 2 of the License, or
-# * (at your option) any later version.
-# *
-# * This program is distributed in the hope that it will be useful,
-# * but WITHOUT ANY WARRANTY; without even the implied warranty of
-# * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# * GNU General Public License for more details.
-# *
-# * You should have received a copy of the GNU General Public License
-# * along with this program; if not, write to the Free Software
-# * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA
-# * 02111-1307  USA
-# *
-# *  All comments concerning this program package may be sent to the
-# *  e-mail address 'scipion@cnb.csic.es'
-# *
-# **************************************************************************
-
 import os
 import pyworkflow.utils as pwutils
 import pwem
@@ -65,11 +41,22 @@ class Plugin(pwem.Plugin):
     def defineBinaries(cls, env):
         def getCryotenInstallationCommands():
             commands = cls.getCondaActivationCmd() + " "
-            commands += "if [ ! -d cryoten ]; then git clone https://github.com/jianlin-cheng/cryoten; fi && "
+            # Remove existing cryoten directory if it exists
+            commands += "if [ -d cryoten ]; then rm -rf cryoten; fi && "
+            # Clone the cryoten repository
+            commands += "git clone https://github.com/jianlin-cheng/cryoten && "
+            # Change directory to cryoten
             commands += "cd cryoten && "
-            commands += "if [ ! -f cryoten.ckpt ]; then wget https://zenodo.org/records/12693785/files/cryoten.ckpt; fi && "
-            commands += "conda env list | grep -q cryoten_env || conda env create -f environment.yaml && "
+            # Download cryoten_v2.ckpt and rename it to cryoten.ckpt
+            commands += "if [ ! -f cryoten_v2.ckpt ]; then wget https://zenodo.org/records/14736781/files/cryoten_v2.ckpt; fi && "
+            commands += "mv cryoten_v2.ckpt cryoten.ckpt && "
+            # Remove existing conda environment if it exists
+            commands += "conda remove -n cryoten_env --all -y && "
+            # Create the conda environment
+            commands += "conda env create -f environment.yaml && "
+            # Activate the conda environment
             commands += "conda activate cryoten_env && "
+            # Create a file to indicate that cryoten has been installed
             commands += "touch ../cryoten_installed"
             return commands
 
