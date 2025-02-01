@@ -7,7 +7,6 @@ from pwem.protocols import EMProtocol
 from pyworkflow.protocol import String
 from pwem.objects import Volume  # Import the Volume class to define the output
 
-
 class CryotenPrefixEnhace(EMProtocol):
     """
     This protocol will enhance the map using Cryoten software.
@@ -73,17 +72,30 @@ class CryotenPrefixEnhace(EMProtocol):
             # Construct the full path
             fullInputFilePath = os.path.join(projectPath, inputFilePath)
 
-            # Print the full input file path for verification
             print(f"Full input file path: {fullInputFilePath}")
 
             # Determine the conda path dynamically
             condaPath = self.get_conda_path()
 
-            # Get the Scipion base path from an environment variable
-            scipion_base_path = os.getenv('SCIPION_BASE_PATH', os.path.expanduser('~/scipion'))
+            # Get the Scipion base path from the environment variable
+            scipion_base_path = os.getenv('SCIPION_HOME')
+
+            # Verify the Scipion base path
+            if not scipion_base_path or not os.path.isdir(scipion_base_path):
+                raise Exception(f"Scipion base path does not exist or is not set: {scipion_base_path}")
+
+            # Print the Scipion base path for verification
+            print(f"Scipion base path: {scipion_base_path}")
 
             # Construct the Cryoten path based on the Scipion base path
             cryotenPath = os.path.join(scipion_base_path, 'software/em/cryoten-1.0.0/cryoten')
+
+            # Verify the Cryoten path
+            if not os.path.isdir(cryotenPath):
+                raise Exception(f"Cryoten path does not exist: {cryotenPath}")
+
+            # Print the Cryoten path for verification
+            print(f"Cryoten path: {cryotenPath}")
 
             # Get the run directory name dynamically
             runPath = self._getPath()
@@ -106,12 +118,14 @@ class CryotenPrefixEnhace(EMProtocol):
             """
             print(f"Running command: {command}")
 
-            # Execute the command
+            # Execute the command and log output and error messages
             stdout, stderr = run_command(command)
+            print(f"Command output: {stdout}")
+            print(f"Command error: {stderr}")
 
-            # Log the output and error messages
-            # print(f"Command output: {stdout}")
-            # print(f"Command error: {stderr}")
+            # Verify the output file
+            if not os.path.isfile(outputFilePath):
+                raise Exception(f"Output file was not created: {outputFilePath}")
 
             # Save the output file path for the next step
             self.outputFilePath = String(outputFilePath)
@@ -136,8 +150,6 @@ class CryotenPrefixEnhace(EMProtocol):
 
         self._defineOutputs(outputVolume=outputVolume)
         self._defineSourceRelation(self.inputVolume, outputVolume)
-
-        
 
     # --------------------------- INFO functions -----------------------------------
     def _validate(self):
