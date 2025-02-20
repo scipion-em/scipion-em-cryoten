@@ -25,6 +25,9 @@ class CryotenPrefixEnhace(EMProtocol):
         Params:
             form: this is the form to be populated with sections and params.
         """
+        form.addHidden(params.GPU_LIST, params.StringParam, default='0', label="Choose GPU IDs",
+                       help="Add a list of GPU devices that can be used")
+        
         form.addSection(label=Message.LABEL_INPUT)
 
         form.addParam('inputVolume', params.PointerParam,
