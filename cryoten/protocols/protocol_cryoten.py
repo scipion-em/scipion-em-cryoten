@@ -27,7 +27,7 @@ class CryotenPrefixEnhace(EMProtocol):
         """
         form.addHidden(params.GPU_LIST, params.StringParam, default='0', label="Choose GPU IDs",
                        help="Add a list of GPU devices that can be used")
-        
+
         form.addSection(label=Message.LABEL_INPUT)
 
         form.addParam('inputVolume', params.PointerParam,
@@ -112,14 +112,19 @@ class CryotenPrefixEnhace(EMProtocol):
             outputFileName = os.path.splitext(inputFileName)[0] + '.mrc'
             outputFilePath = os.path.join(extraPath, outputFileName)
 
+            # Get GPU list from parameters
+            forGpu = 'export CUDA_VISIBLE_DEVICES={}'.format(self.getGPUIds()[0])
+
             # Construct the command
             command = f"""
                 source {condaPath} && \
                 conda activate cryoten_env && \
+                {forGpu} && \
                 cd {cryotenPath} && \
                 python eval.py {fullInputFilePath} {outputFilePath}
             """
             print(f"Running command: {command}")
+
 
             # Execute the command and log output and error messages
             stdout, stderr = run_command(command)
@@ -169,3 +174,6 @@ class CryotenPrefixEnhace(EMProtocol):
         methods = []
         methods.append("This protocol enhances a map using the Cryoten software.")
         return methods
+
+    def getGPUIds(self):
+        return getattr(self, params.GPU_LIST).get().split(',')
